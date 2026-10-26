@@ -25,58 +25,64 @@ class FakeOccurrence:
 
 
 class ParseArgsTest(unittest.TestCase):
+    """参数只认英文；中文参数全部不再识别（v0.3.2 起）。"""
+
     def test_plain_week(self):
-        args = fmt.parse_schedule_args("课表 9")
+        args = fmt.parse_schedule_args("schedule 9")
         self.assertEqual(args["week"], 9)
         self.assertEqual(args["action"], "")
 
     def test_week_and_view(self):
-        args = fmt.parse_schedule_args("课表 第9周 表格")
+        args = fmt.parse_schedule_args("schedule 9 grid")
         self.assertEqual(args["week"], 9)
         self.assertEqual(args["view"], "grid")
 
     def test_refresh_and_json(self):
-        args = fmt.parse_schedule_args("课表 json 刷新")
+        args = fmt.parse_schedule_args("schedule json refresh")
         self.assertTrue(args["refresh"])
         self.assertEqual(args["view"], "json")
 
     def test_today_tomorrow(self):
-        self.assertEqual(fmt.parse_schedule_args("课表 今天")["action"], "today")
-        self.assertEqual(fmt.parse_schedule_args("课表 明天")["action"], "tomorrow")
+        self.assertEqual(fmt.parse_schedule_args("schedule today")["action"], "today")
+        self.assertEqual(fmt.parse_schedule_args("schedule tomorrow")["action"], "tomorrow")
 
     def test_terms(self):
-        self.assertEqual(fmt.parse_schedule_args("课表 学期")["action"], "terms")
+        self.assertEqual(fmt.parse_schedule_args("schedule terms")["action"], "terms")
 
     def test_set_term(self):
-        args = fmt.parse_schedule_args("课表 学期 2026-2027-1")
+        args = fmt.parse_schedule_args("schedule terms 2026-2027-1")
         self.assertEqual(args["action"], "set_term")
         self.assertEqual(args["term"], "2026-2027-1")
 
     def test_reset_term(self):
-        args = fmt.parse_schedule_args("课表 学期 默认")
+        args = fmt.parse_schedule_args("schedule terms auto")
         self.assertEqual(args["action"], "set_term")
         self.assertEqual(args["term"], "")
 
     def test_help(self):
-        self.assertTrue(fmt.parse_schedule_args("课表 帮助")["help"])
         self.assertTrue(fmt.parse_schedule_args("schedule help")["help"])
-
-    def test_english_command_and_args(self):
-        args = fmt.parse_schedule_args("schedule 9 grid")
-        self.assertEqual(args["week"], 9)
-        self.assertEqual(args["view"], "grid")
-        self.assertEqual(fmt.parse_schedule_args("schedule today")["action"], "today")
-        self.assertEqual(fmt.parse_schedule_args("schedule tomorrow")["action"], "tomorrow")
-        self.assertEqual(fmt.parse_schedule_args("schedule terms")["action"], "terms")
-        self.assertEqual(
-            fmt.parse_schedule_args("schedule terms 2026-2027-1")["term"], "2026-2027-1"
-        )
+        self.assertTrue(fmt.parse_schedule_args("schedule -h")["help"])
+        self.assertTrue(fmt.parse_schedule_args("schedule ?")["help"])
 
     def test_command_name_is_ignored_as_token(self):
         # /schedule 9 里的 schedule 不应被当成周次或视图
         args = fmt.parse_schedule_args("/schedule 9")
         self.assertEqual(args["week"], 9)
         self.assertIsNone(args["view"])
+
+    def test_chinese_args_are_not_recognized(self):
+        """中文参数已下线，不能悄悄生效。"""
+        self.assertIsNone(fmt.parse_schedule_args("schedule 第9周")["week"])
+        self.assertIsNone(fmt.parse_schedule_args("schedule 表格")["view"])
+        self.assertFalse(fmt.parse_schedule_args("schedule 刷新")["refresh"])
+        self.assertEqual(fmt.parse_schedule_args("schedule 今天")["action"], "")
+        self.assertEqual(fmt.parse_schedule_args("schedule 学期")["action"], "")
+        self.assertFalse(fmt.parse_schedule_args("schedule 帮助")["help"])
+
+    def test_term_needs_exact_code(self):
+        args = fmt.parse_schedule_args("schedule terms 2026-2027")
+        self.assertEqual(args["action"], "terms")
+        self.assertEqual(args["term"], "")
 
 
 class FormatTest(unittest.TestCase):

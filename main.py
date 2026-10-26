@@ -439,7 +439,7 @@ class YanheSchedulePlugin(Star):
                     tt, label = await self._timetable(refresh=True)
                 yield event.plain_result(
                     f"已切换到 {label}\n本周：第 {tt.current_week()} 周（{self._header(tt, tt.current_week())}）\n"
-                    "发送 /schedule 查看，或 /schedule 学期 默认 切回自动。"
+                    "发送 /schedule 查看，或 /schedule terms auto 切回自动。"
                 )
             except JwappError as exc:
                 yield event.plain_result(f"切换学期失败：{exc}")
@@ -584,7 +584,7 @@ class YanheSchedulePlugin(Star):
             yield event.plain_result(f"导出失败：{exc}")
             return
         if not tt.occurrences:
-            yield event.plain_result(f"{label}\n课表里还没有课程，先 /schedule 刷新 试试。")
+            yield event.plain_result(f"{label}\n课表里还没有课程，先 /schedule refresh 试试。")
             return
         path = DATA_DIR / f"yanhe-{_safe_name(label)}.ics"
         try:

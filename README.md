@@ -49,16 +49,16 @@ git clone https://github.com/FMyuchuan/astrbot_plugin_yanhe_schedule.git
 
 ## 命令
 
-> 指令名是英文的，参数保持中文/英文都能写（`/schedule 9` 和 `/schedule 第9周` 等价）。
+> 指令名和参数都用英文；**回复文案仍是中文**。
 
 | 命令 | 作用 |
 | --- | --- |
 | `/schedule` / `/schedule 9` / `/schedule 9 grid` | 本周 / 指定周 / 表格样式（`grid`、`json`、`list`） |
-| `/schedule 今天` / `/schedule tomorrow` | 某天 |
-| `/schedule 刷新` | 忽略缓存重新拉取 |
-| `/schedule 学期` / `/schedule 学期 2026-2027-1` | 学期列表 / 切换 |
+| `/schedule today` / `/schedule tomorrow` | 某天 |
+| `/schedule refresh` | 忽略缓存重新拉取 |
+| `/schedule terms` / `/schedule terms 2026-2027-1` | 学期列表 / 切换 |
 | `/next` | 最近一节课 |
-| `/today` / `/tomorrow` | 今天 / 明天（`/schedule 今天` 的快捷写法） |
+| `/today` / `/tomorrow` | 今天 / 明天（`/schedule today` 的快捷写法） |
 | `/status` | 学期、教学第一周、缓存状态 |
 | `/export` | 整学期导出为 `.ics` 日历文件（可导入手机日历） |
 | `/login` | 发起登录（管理员） |

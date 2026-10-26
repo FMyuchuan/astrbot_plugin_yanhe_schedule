@@ -2,7 +2,7 @@ name: astrbot_plugin_yanhe_schedule
 display_name: 延河课表
 desc: 在聊天里查询延河课表，并提供 Agent 函数工具（周课表/某天/下节课/切学期）
 short_desc: 聊天查询延河课表
-version: v0.3.1
+version: v0.3.2
 author: schedule contributors
 astrbot_version: ">=4.9.2"
 support_platforms:

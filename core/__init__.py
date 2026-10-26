@@ -3,7 +3,7 @@
 由 AstrBot 插件与本地工具共用。
 """
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 from .schedule import Timetable  # noqa: F401
 

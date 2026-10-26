@@ -12,22 +12,21 @@ from datetime import date, datetime, timedelta
 WEEKDAY_NAMES = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 
 VIEW_ALIASES = {
-    "表格": "grid",
     "grid": "grid",
-    "列表": "list",
     "list": "list",
     "json": "json",
 }
 
 HELP_TEXT = (
-    "课表查询用法：\n"
+    "课表查询用法（指令与参数都是英文，回复仍是中文）：\n"
     "  /schedule                    本周\n"
     "  /schedule 9                  第 9 周\n"
-    "  /schedule 9 表格             表格样式（grid / json / list 也认）\n"
-    "  /schedule 今天 / 明天        今天 / 明天（today / tomorrow 同义）\n"
-    "  /schedule 刷新               忽略缓存重新拉取\n"
-    "  /schedule 学期               列出所有学期\n"
-    "  /schedule 学期 2026-2027-1   切换到指定学期\n"
+    "  /schedule 9 grid             表格样式（grid / json / list）\n"
+    "  /schedule today / tomorrow   今天 / 明天\n"
+    "  /schedule refresh            忽略缓存重新拉取\n"
+    "  /schedule terms              列出所有学期\n"
+    "  /schedule terms 2026-2027-1  切换到指定学期\n"
+    "  /schedule terms auto         切回自动跟随教务当前学期\n"
     "  /next                        最近的一节课\n"
     "  /today  /tomorrow            今天 / 明天\n"
     "  /status                      学期、教学第一周、缓存状态\n"
@@ -58,23 +57,23 @@ def parse_schedule_args(text: str) -> dict:
     while index < len(tokens):
         token = tokens[index]
         lower = token.lower()
-        if token in ("帮助", "help") or lower in ("-h", "--help", "?"):
+        if lower in ("help", "-h", "--help", "?"):
             result["help"] = True
-        elif token in VIEW_ALIASES:
-            result["view"] = VIEW_ALIASES[token]
-        elif token in ("刷新", "--refresh", "-r") or lower == "refresh":
+        elif lower in VIEW_ALIASES:
+            result["view"] = VIEW_ALIASES[lower]
+        elif lower in ("refresh", "--refresh", "-r"):
             result["refresh"] = True
-        elif token in ("今天", "今日") or lower == "today":
+        elif lower == "today":
             result["action"] = "today"
-        elif token in ("明天", "明日") or lower == "tomorrow":
+        elif lower == "tomorrow":
             result["action"] = "tomorrow"
-        elif token in ("学期", "terms") or lower == "terms":
+        elif lower in ("terms", "term"):
             nxt = tokens[index + 1] if index + 1 < len(tokens) else ""
             if re.match(r"^\d{4}-\d{4}-\d$", nxt):
                 result["action"] = "set_term"
                 result["term"] = nxt
                 index += 1
-            elif nxt in ("默认", "自动", "auto"):
+            elif nxt.lower() in ("auto", "default"):
                 result["action"] = "set_term"
                 result["term"] = ""
                 index += 1
@@ -82,10 +81,6 @@ def parse_schedule_args(text: str) -> dict:
                 result["action"] = "terms"
         elif token.isdigit():
             result["week"] = int(token)
-        elif token.startswith("第") and token.endswith("周"):
-            digits = re.sub(r"\D", "", token)
-            if digits:
-                result["week"] = int(digits)
         index += 1
     return result
 
@@ -152,5 +147,5 @@ def format_terms(rows, current: str) -> str:
     for row in rows:
         mark = " ← 当前" if row.get("dm") == current else ""
         lines.append(f"  {row['dm']}  {row.get('mc', '')}{mark}")
-    lines.append("切换：/schedule 学期 2026-2027-1")
+    lines.append("切换：/schedule terms 2026-2027-1")
     return "\n".join(lines)
