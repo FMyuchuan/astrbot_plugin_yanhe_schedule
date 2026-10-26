@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+out/
+*.log
+
+# 本地凭据 / 会话，绝不提交
+account.txt
+cookie.txt
+login-debug.html
+captcha.png
+session.json
+.piptmp/
+data/
+
+# 其他
+.DS_Store
+.idea/
+.vscode/

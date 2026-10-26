@@ -1,0 +1,36 @@
+name: Bug 反馈
+description: 报告插件的问题（请勿粘贴 cookie / ticket / 手机号）
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。提交前请先确认：
+        - 已阅读 README 的「需要短信/图形验证码时」和「周次是怎么算的」
+        - 日志、截图里**不要**包含 cookie、ticket、手机号、学号
+  - type: textarea
+    id: what
+    attributes:
+      label: 现象
+      description: 发生了什么，预期是什么
+      placeholder: 例如：/课表 返回「登录失败」，日志里是 xxx
+    validations:
+      required: true
+  - type: input
+    id: astrbot_version
+    attributes:
+      label: AstrBot 版本
+      placeholder: 4.29.3
+    validations:
+      required: true
+  - type: input
+    id: plugin_version
+    attributes:
+      label: 插件版本 / commit
+      placeholder: v0.1.0 或 commit hash
+  - type: textarea
+    id: logs
+    attributes:
+      label: 脱敏后的日志
+      description: 删除 cookie、ticket、手机号、学号后再贴
+      render: text
