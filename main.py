@@ -48,7 +48,7 @@ def _safe_name(text: str) -> str:
 def _strip_command(text: str, *names: str) -> str:
     """剥掉消息开头的指令词，返回后面的参数。
 
-    指令名已改成英文，但旧的中文名也一并识别，避免有人手快打错就白输一次验证码。
+    指令名只认英文，不做中文兼容；参数里的中文照旧（如 /schedule 第9周）。
     """
     raw = (text or "").strip().lstrip("/!！").strip()
     lowered = raw.lower()
@@ -292,7 +292,7 @@ class YanheSchedulePlugin(Star):
         if not self._can_manage_login(event):
             yield event.plain_result("只有管理员能完成登录验证。")
             return
-        code = _strip_command(event.message_str, "code", "验证码")
+        code = _strip_command(event.message_str, "code")
         code = re.sub(r"\s+", "", code)
         if not code:
             yield event.plain_result("用法：/code 123456 或 /code abcd")
@@ -517,7 +517,7 @@ class YanheSchedulePlugin(Star):
         if not self._is_admin(event):
             yield event.plain_result("只有管理员能校准周次。")
             return
-        args = _strip_command(event.message_str, "calibrate", "校准")
+        args = _strip_command(event.message_str, "calibrate")
         digits = re.sub(r"\D", "", args)
         if not digits:
             yield event.plain_result("用法：/calibrate 5（把本周校准为第 5 周）")
