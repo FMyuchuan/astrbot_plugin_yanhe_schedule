@@ -336,6 +336,21 @@ class JwappClient:
             return False
 
     # ---------------------------------------------------------- 人工验证续跑
+    def pending_kind(self) -> str:
+        """当前待人工处理的验证类型。
+
+        返回 ``""``（无）/ ``login_captcha`` / ``sms_captcha`` / ``sms``。
+        插件据此决定 /验证码 应该喂给图形验证码还是短信验证码，
+        不必再窥探 ``_pending`` 这类私有字段。
+        """
+        if isinstance(self._pending, dict):
+            kind = str(self._pending.get("kind") or "")
+            if kind:
+                return kind
+        if isinstance(self._pending_sms, dict):
+            return "sms"
+        return ""
+
     def resume_captcha(self, code: str) -> None:
         pending = self._pending
         if not pending:
@@ -361,10 +376,12 @@ class JwappClient:
                 headers={"Referer": pending["page_url"], "Origin": SSO_BASE},
                 allow_redirects=False,
             )
-            self._pending = None
+            # 先判错再清空待处理状态：图形验证码可能只是看错了，
+            # 保留 pending 才能让用户直接重试，而不用从头 /登录。
             message = _login_error(result.text or "")
             if message:
-                raise JwappError(message)
+                raise JwappError(f"{message}（可重新发送 /验证码 再试一次）")
+            self._pending = None
             self._handle_login_result(result, pending["sid"])
             return
 

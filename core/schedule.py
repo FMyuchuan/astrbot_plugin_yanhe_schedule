@@ -108,6 +108,10 @@ class Timetable:
             # 冲突时顺延，避免互相覆盖
             while start_idx in blocks:
                 start_idx += 1
+            # 顺延后可能掉出 13 节之外：丢弃而不是渲染到不存在的位置
+            if not 0 <= start_idx < len(PERIODS):
+                continue
+            span = min(span, len(PERIODS) - start_idx)
             blocks[start_idx] = Block(occurrence=occurrence, start_period=start_idx, span=span)
         return blocks
 

@@ -14,6 +14,7 @@
 - 学期列表与切换
 - 自动周次对齐（读取教务的教学周偏移），也可手动校准
 - 登录支持短信、图形验证码（在聊天里发 `/验证码` 继续）
+- 整学期导出 `.ics`，可直接导入手机日历
 - 6 个 Agent 工具，模型可自行调用
 
 ## 安装
@@ -39,7 +40,7 @@ git clone https://github.com/FMyuchuan/astrbot_plugin_yanhe_schedule.git
 | `max_weeks` | 否 | 学期总周数，默认 16 |
 | `cache_hours` | 否 | 课表缓存时长，默认 6 小时 |
 | `allowed_users` | 否 | 允许查询的发送者 ID，留空所有人可查 |
-| `admin_users` | 否 | 允许 `/校准` 的 ID，留空所有人可用 |
+| `admin_users` | 否 | 允许 `/校准`、`/登录`、`/验证码`、`/取消登录` 的 ID；留空时退回 `allowed_users`，两者都空则所有人可用 |
 
 运行数据存在 `AstrBot/data/plugin_data/astrbot_plugin_yanhe_schedule/`：
 
@@ -58,6 +59,7 @@ git clone https://github.com/FMyuchuan/astrbot_plugin_yanhe_schedule.git
 | `/登录` `/验证码 123456` `/取消登录` | 人工完成短信 / 图形验证码 |
 | `/校准 5` | 校准本周为第 5 周（管理员） |
 | `/课表状态` | 学期、教学第一周、缓存状态 |
+| `/导出` | 整学期导出为 `.ics` 日历文件（可导入手机日历） |
 
 ## Agent 工具
 

@@ -14,6 +14,7 @@ from pathlib import Path
 
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.message_components import File
 from astrbot.api.star import Context, Star
 
 from .core.campus import rows_to_occurrences
@@ -31,10 +32,18 @@ from .core.jwapp import (
     LoginChallenge,
     SmsChallenge,
 )
-from .core.render import render_grid, render_json, render_list
+from .core.render import render_grid, render_ics, render_json, render_list
 from .core.schedule import Timetable
 
 PLUGIN_NAME = "astrbot_plugin_yanhe_schedule"
+
+
+def _safe_name(text: str) -> str:
+    """把学期名之类的标签压成安全的文件名片段。"""
+    cleaned = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff._-]", "_", text or "")
+    cleaned = re.sub(r"_+", "_", cleaned).strip("._")
+    return cleaned or "schedule"
+
 
 
 def _data_dir() -> Path:
@@ -77,6 +86,8 @@ class YanheSchedulePlugin(Star):
             SESSION_FILE.write_text(
                 json.dumps(self._state, ensure_ascii=False, indent=1), encoding="utf-8"
             )
+            # 会话里有登录 cookie，只给进程属主读
+            SESSION_FILE.chmod(0o600)
         except OSError as exc:
             logger.warning(f"[课表] 保存会话失败：{exc}")
 
@@ -98,6 +109,18 @@ class YanheSchedulePlugin(Star):
         except Exception:
             return False
 
+    def _can_manage_login(self, event: AstrMessageEvent) -> bool:
+        """登录类命令的权限：会发真实短信、改写全局会话，比查询更敏感。
+
+        优先看 ``admin_users``；没配时退回 ``allowed_users``；
+        两者都空（单用户部署）才允许所有人。
+        """
+        admins = [str(x) for x in (self.config.get("admin_users") or [])]
+        if admins:
+            return self._is_admin(event)
+        return self._allowed(event)
+
+
     def _cfg(self, key: str, default=None):
         value = self.config.get(key, default)
         return default if value in (None, "") else value
@@ -108,15 +131,24 @@ class YanheSchedulePlugin(Star):
         return CACHE_DIR / f"term-{safe}.json"
 
     def _load_term_cache(self, term: str):
-        ttl = int(self._cfg("cache_hours", 6)) * 3600
+        try:
+            ttl = int(float(self._cfg("cache_hours", 6))) * 3600
+        except (TypeError, ValueError):
+            ttl = 6 * 3600
+        if ttl <= 0:
+            return None
         path = self._term_cache_file(term)
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
             if datetime.now().timestamp() - path.stat().st_mtime > ttl:
                 return None
-            return payload
+            payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
+        # 字段不全的缓存直接当没有，别让它带着 KeyError 往下走
+        if not isinstance(payload, dict) or not {"term_start", "rows"} <= payload.keys():
+            return None
+        return payload
+
 
     def _save_term_cache(self, term: str, payload: dict) -> None:
         try:
@@ -185,44 +217,49 @@ class YanheSchedulePlugin(Star):
             ]
         return [("text", str(challenge))]
 
-    def _do_login(self) -> JwappClient:
+    def _do_login(self) -> dict:
+        """完整走一次登录（含 bootstrap），返回当前学期信息。"""
         sid = str(self._cfg("sid", ""))
         password = str(self._cfg("password", ""))
         if not sid or not password:
             raise JwappError("插件还没配置学号和密码，请到插件配置里填写")
-        client = JwappClient()
-        try:
-            client.login(sid, password)
-        except LoginChallenge:
-            # 记住这个 client，/验证码 要在同一个会话里续跑
-            self._pending_client = client
-            raise
-        self._save_client_session(client)
-        return client
+        # 和抓课表共用一把锁：登录会改写整个 requests.Session，
+        # 与正在进行的查询并发会互相踩 cookie。
+        with self._thread_lock:
+            client = JwappClient()
+            try:
+                client.login(sid, password)
+            except LoginChallenge:
+                # 记住这个 client，/验证码 要在同一个会话里续跑
+                self._pending_client = client
+                raise
+            self._save_client_session(client)
+            client.bootstrap()
+            return client.current_term()
 
-    def _do_code(self, code: str) -> JwappClient:
+    def _do_code(self, code: str) -> dict:
+        """用验证码续跑登录，返回当前学期信息。"""
         client = self._pending_client
         if client is None:
             raise JwappError("当前没有等待验证码的登录，请先发送 /登录")
-        if client._pending and client._pending.get("kind") in (
-            "login_captcha",
-            "sms_captcha",
-        ):
-            client.resume_captcha(code)
-        else:
-            client.resume_sms(code)
-        self._save_client_session(client)
-        return client
+        with self._thread_lock:
+            if client.pending_kind() in ("login_captcha", "sms_captcha"):
+                client.resume_captcha(code)
+            else:
+                client.resume_sms(code)
+            self._save_client_session(client)
+            client.bootstrap()
+            return client.current_term()
+
+
 
     @filter.command("登录")
     async def cmd_login(self, event: AstrMessageEvent):
-        if not self._allowed(event):
-            yield event.plain_result("没有权限。")
+        if not self._can_manage_login(event):
+            yield event.plain_result("只有管理员能发起登录。")
             return
         try:
-            client = await asyncio.to_thread(self._do_login)
-            client.bootstrap()
-            info = client.current_term()
+            info = await asyncio.to_thread(self._do_login)
             yield event.plain_result(
                 f"登录成功，已保存会话。\n当前学期：{info['mc']}（{info['dm']}）\n"
                 "发送 /课表 查看课表。"
@@ -238,8 +275,8 @@ class YanheSchedulePlugin(Star):
 
     @filter.command("验证码")
     async def cmd_code(self, event: AstrMessageEvent):
-        if not self._allowed(event):
-            yield event.plain_result("没有权限。")
+        if not self._can_manage_login(event):
+            yield event.plain_result("只有管理员能完成登录验证。")
             return
         code = (event.message_str or "").replace("验证码", "", 1).strip()
         code = code.lstrip("/").strip()
@@ -248,9 +285,7 @@ class YanheSchedulePlugin(Star):
             yield event.plain_result("用法：/验证码 123456 或 /验证码 abcd")
             return
         try:
-            client = await asyncio.to_thread(self._do_code, code)
-            client.bootstrap()
-            info = client.current_term()
+            info = await asyncio.to_thread(self._do_code, code)
             yield event.plain_result(
                 f"验证通过，登录成功。\n当前学期：{info['mc']}（{info['dm']}）"
             )
@@ -265,8 +300,12 @@ class YanheSchedulePlugin(Star):
 
     @filter.command("取消登录")
     async def cmd_login_cancel(self, event: AstrMessageEvent):
+        if not self._can_manage_login(event):
+            yield event.plain_result("只有管理员能取消登录。")
+            return
         self._pending_client = None
         yield event.plain_result("已取消待验证的登录。")
+
 
     def _resolve_term_start(self, client: JwappClient, term: str) -> date:
         saved = (self._state.get("term_starts") or {}).get(term)
@@ -314,6 +353,15 @@ class YanheSchedulePlugin(Star):
             else:
                 term_start = self._resolve_term_start(client, term)
                 rows = client.schedule_rows(term)
+                if label == term:
+                    # 手动指定学期时代码里没有中文名，顺手取一次学期列表补上
+                    try:
+                        for row in client.terms():
+                            if str(row.get("dm")) == term:
+                                label = row.get("mc") or term
+                                break
+                    except JwappError:
+                        pass
                 self._save_term_cache(
                     term,
                     {
@@ -509,6 +557,32 @@ class YanheSchedulePlugin(Star):
             )
         except JwappError as exc:
             yield event.plain_result(f"状态查询失败：{exc}")
+
+    @filter.command("导出")
+    async def cmd_export(self, event: AstrMessageEvent):
+        """把整学期课表导出成 .ics 日历文件（导入手机日历即可）。"""
+        if not self._allowed(event):
+            yield event.plain_result("没有权限查询课表。")
+            return
+        try:
+            async with self._lock:
+                tt, label = await self._timetable()
+        except JwappError as exc:
+            yield event.plain_result(f"导出失败：{exc}")
+            return
+        if not tt.occurrences:
+            yield event.plain_result(f"{label}\n课表里还没有课程，先 /课表 刷新 试试。")
+            return
+        path = DATA_DIR / f"yanhe-{_safe_name(label)}.ics"
+        try:
+            path.write_text(render_ics(tt, calendar_name=label), encoding="utf-8")
+        except OSError as exc:
+            yield event.plain_result(f"导出失败：写文件出错（{exc}）")
+            return
+        yield event.plain_result(
+            f"{label}：共 {len(tt.occurrences)} 节课，已生成 .ics 日历文件。"
+        )
+        yield event.chain_result([File(name=path.name, file=str(path))])
 
     # ---------------------------------------------------- Agent 函数工具
     async def _tool_week(self, event, week: int = 0, view: str = "list") -> str:

@@ -11,7 +11,7 @@ from .schedule import PERIODS
 WEEKDAY_NAMES = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
 
 
-def parse_weeks(zcmc: str | None, mask: str | None, max_week: int = 30) -> list[int]:
+def parse_weeks(zcmc: str | None, mask: str | None = None, max_week: int = 30) -> list[int]:
     """解析上课周次。
 
     ``ZCMC`` 形如「1-8周」「1-16周」「1-15周(单)」「1-8周,10-12周」；

@@ -49,9 +49,9 @@
     "hint": "填发送者 ID（QQ 号等），留空表示所有人可查"
   },
   "admin_users": {
-    "description": "允许校准周次的管理员",
+    "description": "允许校准周次与登录的发送者 ID",
     "type": "list",
     "default": [],
-    "hint": "留空表示所有人可用 /校准；否则只有这些 ID 能校准"
+    "hint": "留空时退回 allowed_users（仍为空则所有人可用）。/校准、/登录、/验证码 都需要这个身份"
   }
 }
