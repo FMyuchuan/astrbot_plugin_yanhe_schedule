@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """延河课表 AstrBot 插件。
 
-在聊天里查询课表：本周、指定周、今日/明日、下节课、学期切换、周次校准。
+在聊天里查询课表：本周、指定周、今日/tomorrow、下节课、学期切换、周次校准。
 仅用于查询当前账号自己的课表。
 """
 
@@ -43,6 +43,20 @@ def _safe_name(text: str) -> str:
     cleaned = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff._-]", "_", text or "")
     cleaned = re.sub(r"_+", "_", cleaned).strip("._")
     return cleaned or "schedule"
+
+
+def _strip_command(text: str, *names: str) -> str:
+    """剥掉消息开头的指令词，返回后面的参数。
+
+    指令名已改成英文，但旧的中文名也一并识别，避免有人手快打错就白输一次验证码。
+    """
+    raw = (text or "").strip().lstrip("/!！").strip()
+    lowered = raw.lower()
+    for name in names:
+        if lowered.startswith(name.lower()):
+            return raw[len(name):].strip()
+    return raw
+
 
 
 
@@ -175,7 +189,7 @@ class YanheSchedulePlugin(Star):
         except LoginChallenge as exc:
             self._pending_client = client
             raise JwappError(
-                f"{exc}：请在聊天里发送 /登录 完成验证（验证码用 /验证码 123456 发送）"
+                f"{exc}：请在聊天里发送 /login 完成验证（验证码用 /code 123456 发送）"
             ) from exc
         self._state["jwapp_cookies"] = client.cookie_data()
         self._state["sid"] = sid
@@ -199,9 +213,9 @@ class YanheSchedulePlugin(Star):
                 path.write_bytes(challenge.image)
             except OSError:
                 path = None
-            text = "登录需要图形验证码，请输入图片里的字符：发送 /验证码 字符"
+            text = "登录需要图形验证码，请输入图片里的字符：发送 /code 字符"
             if challenge.purpose == "sms":
-                text = "发送短信前需要图形验证码，请输入图片里的字符：发送 /验证码 字符"
+                text = "发送短信前需要图形验证码，请输入图片里的字符：发送 /code 字符"
             out: list[tuple[str, str]] = []
             if path:
                 out.append(("image", str(path)))
@@ -212,7 +226,7 @@ class YanheSchedulePlugin(Star):
             return [
                 (
                     "text",
-                    f"短信验证码已发到尾号 {tail} 的手机，发送 /验证码 123456 完成登录。",
+                    f"短信验证码已发到尾号 {tail} 的手机，发送 /code 123456 完成登录。",
                 )
             ]
         return [("text", str(challenge))]
@@ -230,7 +244,7 @@ class YanheSchedulePlugin(Star):
             try:
                 client.login(sid, password)
             except LoginChallenge:
-                # 记住这个 client，/验证码 要在同一个会话里续跑
+                # 记住这个 client，/code 要在同一个会话里续跑
                 self._pending_client = client
                 raise
             self._save_client_session(client)
@@ -241,7 +255,7 @@ class YanheSchedulePlugin(Star):
         """用验证码续跑登录，返回当前学期信息。"""
         client = self._pending_client
         if client is None:
-            raise JwappError("当前没有等待验证码的登录，请先发送 /登录")
+            raise JwappError("当前没有等待验证码的登录，请先发送 /login")
         with self._thread_lock:
             if client.pending_kind() in ("login_captcha", "sms_captcha"):
                 client.resume_captcha(code)
@@ -253,7 +267,7 @@ class YanheSchedulePlugin(Star):
 
 
 
-    @filter.command("登录")
+    @filter.command("login")
     async def cmd_login(self, event: AstrMessageEvent):
         if not self._can_manage_login(event):
             yield event.plain_result("只有管理员能发起登录。")
@@ -262,7 +276,7 @@ class YanheSchedulePlugin(Star):
             info = await asyncio.to_thread(self._do_login)
             yield event.plain_result(
                 f"登录成功，已保存会话。\n当前学期：{info['mc']}（{info['dm']}）\n"
-                "发送 /课表 查看课表。"
+                "发送 /schedule 查看课表。"
             )
         except LoginChallenge as challenge:
             for kind, payload in self._format_challenge(challenge):
@@ -273,16 +287,15 @@ class YanheSchedulePlugin(Star):
         except JwappError as exc:
             yield event.plain_result(f"登录失败：{exc}")
 
-    @filter.command("验证码")
+    @filter.command("code")
     async def cmd_code(self, event: AstrMessageEvent):
         if not self._can_manage_login(event):
             yield event.plain_result("只有管理员能完成登录验证。")
             return
-        code = (event.message_str or "").replace("验证码", "", 1).strip()
-        code = code.lstrip("/").strip()
+        code = _strip_command(event.message_str, "code", "验证码")
         code = re.sub(r"\s+", "", code)
         if not code:
-            yield event.plain_result("用法：/验证码 123456 或 /验证码 abcd")
+            yield event.plain_result("用法：/code 123456 或 /code abcd")
             return
         try:
             info = await asyncio.to_thread(self._do_code, code)
@@ -298,7 +311,7 @@ class YanheSchedulePlugin(Star):
         except JwappError as exc:
             yield event.plain_result(f"验证失败：{exc}")
 
-    @filter.command("取消登录")
+    @filter.command("cancel_login")
     async def cmd_login_cancel(self, event: AstrMessageEvent):
         if not self._can_manage_login(event):
             yield event.plain_result("只有管理员能取消登录。")
@@ -327,7 +340,7 @@ class YanheSchedulePlugin(Star):
                 return date.fromisoformat(str(item["RQ"]))
         if week_dates:
             return date.fromisoformat(str(week_dates[0]["RQ"]))
-        raise JwappError("拿不到第一周日期，请用 /校准 N 指定当前周次")
+        raise JwappError("拿不到第一周日期，请用 /calibrate N 指定当前周次")
 
     def _current_term(self) -> str:
         return str(self._state.get("term") or self._cfg("term", ""))
@@ -393,7 +406,7 @@ class YanheSchedulePlugin(Star):
         return f"{dates[0].strftime('%m-%d')} ~ {dates[-1].strftime('%m-%d')} · 第 {week} 周"
 
     # ------------------------------------------------------------ 命令
-    @filter.command("课表")
+    @filter.command("schedule")
     async def cmd_schedule(self, event: AstrMessageEvent):
         if not self._allowed(event):
             yield event.plain_result("没有权限查询课表。")
@@ -426,7 +439,7 @@ class YanheSchedulePlugin(Star):
                     tt, label = await self._timetable(refresh=True)
                 yield event.plain_result(
                     f"已切换到 {label}\n本周：第 {tt.current_week()} 周（{self._header(tt, tt.current_week())}）\n"
-                    "发送 /课表 查看，或 /课表 学期 默认 切回自动。"
+                    "发送 /schedule 查看，或 /schedule 学期 默认 切回自动。"
                 )
             except JwappError as exc:
                 yield event.plain_result(f"切换学期失败：{exc}")
@@ -461,7 +474,7 @@ class YanheSchedulePlugin(Star):
             logger.exception("[课表] 查询异常")
             yield event.plain_result(f"课表查询出错：{type(exc).__name__}: {exc}")
 
-    @filter.command("下节课")
+    @filter.command("next")
     async def cmd_next(self, event: AstrMessageEvent):
         if not self._allowed(event):
             yield event.plain_result("没有权限查询课表。")
@@ -473,7 +486,7 @@ class YanheSchedulePlugin(Star):
         except JwappError as exc:
             yield event.plain_result(f"查询失败：{exc}")
 
-    @filter.command("今日")
+    @filter.command("today")
     async def cmd_today(self, event: AstrMessageEvent):
         if not self._allowed(event):
             yield event.plain_result("没有权限查询课表。")
@@ -485,7 +498,7 @@ class YanheSchedulePlugin(Star):
         except JwappError as exc:
             yield event.plain_result(f"查询失败：{exc}")
 
-    @filter.command("明日")
+    @filter.command("tomorrow")
     async def cmd_tomorrow(self, event: AstrMessageEvent):
         if not self._allowed(event):
             yield event.plain_result("没有权限查询课表。")
@@ -499,15 +512,15 @@ class YanheSchedulePlugin(Star):
         except JwappError as exc:
             yield event.plain_result(f"查询失败：{exc}")
 
-    @filter.command("校准")
+    @filter.command("calibrate")
     async def cmd_calibrate(self, event: AstrMessageEvent):
         if not self._is_admin(event):
             yield event.plain_result("只有管理员能校准周次。")
             return
-        args = (event.message_str or "").replace("校准", "", 1).strip()
+        args = _strip_command(event.message_str, "calibrate", "校准")
         digits = re.sub(r"\D", "", args)
         if not digits:
-            yield event.plain_result("用法：/校准 5（把本周校准为第 5 周）")
+            yield event.plain_result("用法：/calibrate 5（把本周校准为第 5 周）")
             return
         week = int(digits)
         if not 1 <= week <= 40:
@@ -520,7 +533,7 @@ class YanheSchedulePlugin(Star):
             start = monday - timedelta(weeks=week - 1)
             term_key = self._current_term() or str(self._state.get("term_key", ""))
             if not term_key:
-                raise JwappError("还没拿到学期信息，先发一次 /课表 再校准")
+                raise JwappError("还没拿到学期信息，先发一次 /schedule 再校准")
             starts = dict(self._state.get("term_starts") or {})
             starts[term_key] = start.isoformat()
             self._state["term_starts"] = starts
@@ -536,7 +549,7 @@ class YanheSchedulePlugin(Star):
         except JwappError as exc:
             yield event.plain_result(f"校准失败：{exc}")
 
-    @filter.command("课表状态")
+    @filter.command("status")
     async def cmd_status(self, event: AstrMessageEvent):
         if not self._allowed(event):
             yield event.plain_result("没有权限。")
@@ -558,7 +571,7 @@ class YanheSchedulePlugin(Star):
         except JwappError as exc:
             yield event.plain_result(f"状态查询失败：{exc}")
 
-    @filter.command("导出")
+    @filter.command("export")
     async def cmd_export(self, event: AstrMessageEvent):
         """把整学期课表导出成 .ics 日历文件（导入手机日历即可）。"""
         if not self._allowed(event):
@@ -571,7 +584,7 @@ class YanheSchedulePlugin(Star):
             yield event.plain_result(f"导出失败：{exc}")
             return
         if not tt.occurrences:
-            yield event.plain_result(f"{label}\n课表里还没有课程，先 /课表 刷新 试试。")
+            yield event.plain_result(f"{label}\n课表里还没有课程，先 /schedule 刷新 试试。")
             return
         path = DATA_DIR / f"yanhe-{_safe_name(label)}.ics"
         try:

@@ -1,5 +1,43 @@
 # Changelog
 
+## v0.3.0 (2026-10-26)
+
+> ⚠️ 破坏性变更：斜杠指令改为英文。**回复正文仍是中文**，只是指令名换了。
+
+指令对照：
+
+| 旧 | 新 |
+| --- | --- |
+| `/课表` | `/schedule` |
+| `/下节课` | `/next` |
+| `/今日` / `/明日` | `/today` / `/tomorrow` |
+| `/课表状态` | `/status` |
+| `/导出` | `/export` |
+| `/登录` | `/login` |
+| `/验证码` | `/code` |
+| `/取消登录` | `/cancel_login` |
+| `/校准` | `/calibrate` |
+
+命令参数仍兼容中文（`/schedule 第9周 表格`），并新增英文写法（`today` / `tomorrow` / `terms`）。
+帮助文本里出现的指令名已同步成英文，避免照着帮助打出旧指令。
+
+重构：
+
+- 登录流程（CAS 密码 / 图形验证码 / 短信二次验证，约 380 行）从 `core/jwapp.py`
+  拆到 `core/cas_login.py`，以 `CasLoginMixin` 混入 `JwappClient`
+- 异常类型统一挪到 `core/errors.py`，打破 `jwapp` ↔ `cas_login` 的循环依赖；
+  `from .core.jwapp import JwappError` 仍可用（转出 re-export）
+- 教务端点常量挪到 `core/endpoints.py`，两个模块共用，不再各自硬编码 URL
+- `core/jwapp.py` 从 563 行降到 190 行，只留 HTTP 会话与数据接口
+
+网络层：
+
+- 连接超时与读超时分离（默认 10s / 25s），不再一个 `timeout` 打天下
+- GET 遇到 429/500/502/503/504、超时、连接错误时指数退避重试（默认 2 次，最多等 4s）
+- **POST 默认不重试**：短信验证码接口重放会重复发短信，需要重试必须显式 `retry=True`
+
+测试：85 → 99 个用例，新增 `tests/test_jwapp.py`（重试策略、超时映射、待验证状态、cookie 往返）。
+
 ## v0.2.0 (2026-10-26)
 
 维护轮：修掉一批并发 / 权限 / 边界问题，补上 `.ics` 导出与测试。

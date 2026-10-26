@@ -59,6 +59,24 @@ class ParseArgsTest(unittest.TestCase):
 
     def test_help(self):
         self.assertTrue(fmt.parse_schedule_args("课表 帮助")["help"])
+        self.assertTrue(fmt.parse_schedule_args("schedule help")["help"])
+
+    def test_english_command_and_args(self):
+        args = fmt.parse_schedule_args("schedule 9 grid")
+        self.assertEqual(args["week"], 9)
+        self.assertEqual(args["view"], "grid")
+        self.assertEqual(fmt.parse_schedule_args("schedule today")["action"], "today")
+        self.assertEqual(fmt.parse_schedule_args("schedule tomorrow")["action"], "tomorrow")
+        self.assertEqual(fmt.parse_schedule_args("schedule terms")["action"], "terms")
+        self.assertEqual(
+            fmt.parse_schedule_args("schedule terms 2026-2027-1")["term"], "2026-2027-1"
+        )
+
+    def test_command_name_is_ignored_as_token(self):
+        # /schedule 9 里的 schedule 不应被当成周次或视图
+        args = fmt.parse_schedule_args("/schedule 9")
+        self.assertEqual(args["week"], 9)
+        self.assertIsNone(args["view"])
 
 
 class FormatTest(unittest.TestCase):
