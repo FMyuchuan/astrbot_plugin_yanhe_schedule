@@ -11,11 +11,20 @@ from .schedule import PERIODS
 WEEKDAY_NAMES = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
 
 
-def parse_weeks(zcmc: str | None, mask: str | None = None, max_week: int = 30) -> list[int]:
+def parse_weeks(
+    zcmc: str | None,
+    mask: str | None = None,
+    max_week: int = 30,
+    mask_offset: int = 0,
+) -> list[int]:
     """解析上课周次。
 
     ``ZCMC`` 形如「1-8周」「1-16周」「1-15周(单)」「1-8周,10-12周」；
     解析不了时退回 ``SKZC`` 的按周位图（如 ``1111111100000000``）。
+
+    注意 ``SKZC`` 位图是**按校历周**排列的，而 ``ZCMC`` 说的是**教学周**。
+    教学第 1 周 = 校历第 (1 + mask_offset) 周，所以位图回退时必须把周次
+    往回挪 ``mask_offset`` 周，否则整门课会偏几周（实测 2026-2027-1 偏移为 3）。
     """
     weeks: set[int] = set()
     text = (zcmc or "").strip()
@@ -38,8 +47,11 @@ def parse_weeks(zcmc: str | None, mask: str | None = None, max_week: int = 30) -
 
     if not weeks and mask:
         for index, flag in enumerate(mask.strip()):
-            if flag == "1":
-                weeks.add(index + 1)
+            if flag != "1":
+                continue
+            week = index + 1 - max(0, int(mask_offset))
+            if 1 <= week <= max_week:
+                weeks.add(week)
 
     return sorted(weeks)
 
@@ -75,7 +87,9 @@ def row_periods(row: dict) -> tuple[int, int]:
     return start, end
 
 
-def rows_to_occurrences(rows: list[dict], term_start: date) -> list[Occurrence]:
+def rows_to_occurrences(
+    rows: list[dict], term_start: date, week_offset: int = 0
+) -> list[Occurrence]:
     occurrences: list[Occurrence] = []
     seen: set[tuple] = set()
 
@@ -94,7 +108,9 @@ def rows_to_occurrences(rows: list[dict], term_start: date) -> list[Occurrence]:
         start_time = PERIODS[start_period - 1][0]
         end_time = PERIODS[end_period - 1][1]
 
-        weeks = parse_weeks(row.get("ZCMC"), row.get("SKZC"))
+        weeks = parse_weeks(
+            row.get("ZCMC"), row.get("SKZC"), mask_offset=week_offset
+        )
         if not weeks:
             weeks = list(range(1, 17))
 

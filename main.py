@@ -320,7 +320,16 @@ class YanheSchedulePlugin(Star):
         yield event.plain_result("已取消待验证的登录。")
 
 
-    def _resolve_term_start(self, client: JwappClient, term: str) -> date:
+    def _term_offset(self, client: JwappClient, term: str) -> int:
+        """教学周相对校历周的偏移；拿不到就当 0（不影响 ZCMC 正常解析）。"""
+        try:
+            return int(client.week_offset(term))
+        except (JwappError, TypeError, ValueError):
+            return 0
+
+    def _resolve_term_start(
+        self, client: JwappClient, term: str, offset: int | None = None
+    ) -> date:
         saved = (self._state.get("term_starts") or {}).get(term)
         if saved:
             try:
@@ -333,7 +342,8 @@ class YanheSchedulePlugin(Star):
                 return date.fromisoformat(configured)
             except ValueError:
                 pass
-        offset = client.week_offset(term)
+        if offset is None:
+            offset = self._term_offset(client, term)
         week_dates = client.week_dates(term, 1 + offset)
         for item in week_dates:
             if str(item.get("XQ")) == "1" and item.get("RQ"):
@@ -362,9 +372,11 @@ class YanheSchedulePlugin(Star):
             if payload:
                 term_start = date.fromisoformat(payload["term_start"])
                 rows = payload["rows"]
+                offset = int(payload.get("week_offset") or 0)
                 label = payload.get("label") or label
             else:
-                term_start = self._resolve_term_start(client, term)
+                offset = self._term_offset(client, term)
+                term_start = self._resolve_term_start(client, term, offset=offset)
                 rows = client.schedule_rows(term)
                 if label == term:
                     # 手动指定学期时代码里没有中文名，顺手取一次学期列表补上
@@ -381,12 +393,13 @@ class YanheSchedulePlugin(Star):
                         "term": term,
                         "label": label,
                         "term_start": term_start.isoformat(),
+                        "week_offset": offset,
                         "rows": rows,
                         "fetched_at": datetime.now().isoformat(timespec="seconds"),
                     },
                 )
 
-            occurrences = rows_to_occurrences(rows, term_start)
+            occurrences = rows_to_occurrences(rows, term_start, week_offset=offset)
             timetable = Timetable(
                 occurrences,
                 term_start=term_start,

@@ -58,6 +58,22 @@ class ParseWeeksTest(unittest.TestCase):
     def test_mask_ignored_when_text_parses(self):
         self.assertEqual(parse_weeks("2-3周", "11111111"), [2, 3])
 
+    def test_mask_shifted_by_calendar_offset(self):
+        """SKZC 位图按校历周排，教学周要往回挪 offset（实测 2026-2027-1 为 3）。"""
+        # 「1-16周」的位图：前 3 位是校历前 3 周，第 4 位起才是教学第 1 周
+        mask = "0001111111111111111"
+        self.assertEqual(parse_weeks("", mask), list(range(4, 20)))  # 不传 offset：错位
+        self.assertEqual(parse_weeks("", mask, mask_offset=3), list(range(1, 17)))
+        # 「7-14周」的位图
+        mask2 = "000000000111111110000"
+        self.assertEqual(parse_weeks("", mask2, mask_offset=3), list(range(7, 15)))
+
+    def test_mask_offset_zero_keeps_old_behaviour(self):
+        self.assertEqual(parse_weeks("", "1100", mask_offset=0), [1, 2])
+
+    def test_mask_still_respects_max_week(self):
+        self.assertEqual(parse_weeks("", "1111111111", max_week=3), [1, 2, 3])
+
     def test_garbage_returns_empty(self):
         self.assertEqual(parse_weeks("待定", ""), [])
 
@@ -110,6 +126,16 @@ class RowsToOccurrencesTest(unittest.TestCase):
     def test_missing_weeks_falls_back_to_full_term(self):
         events = rows_to_occurrences([row(ZCMC="", SKZC="")], TERM_START)
         self.assertEqual(len(events), 16)
+
+    def test_mask_fallback_honours_term_offset(self):
+        """ZCMC 缺失时用 SKZC 位图，必须按校历偏移换算回教学周。"""
+        rows = [row(ZCMC="", SKZC="000000000111111110000")]
+        naive = rows_to_occurrences(rows, TERM_START)
+        fixed = rows_to_occurrences(rows, TERM_START, week_offset=3)
+        self.assertEqual(len(naive), 8)
+        self.assertEqual(len(fixed), 8)
+        self.assertEqual(naive[0].start.date(), date(2026, 11, 23))  # 错位：第 10 周
+        self.assertEqual(fixed[0].start.date(), date(2026, 11, 2))   # 正确：第 7 周
 
     def test_fields_carried_over(self):
         event = rows_to_occurrences([row(ZCMC="1周")], TERM_START)[0]
